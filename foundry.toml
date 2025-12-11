@@ -1,0 +1,16 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+# 预期合约运行次数
+optimizer_runs = 20000
+
+# evm 必须大于等于London，否则有create2兼容问题
+evm_version = "cancun"
+
+# Gas snapshot，用来检测gas回归
+gas_reports = ["SentinelWallet", "WalletFactory"]
+
+# 覆盖率报告
+coverage = true
