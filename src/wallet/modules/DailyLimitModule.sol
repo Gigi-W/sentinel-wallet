@@ -3,13 +3,12 @@
 // SPDX-License-Identifier:MIT
 pragma solidity ^0.8.21;
 
-interface ISentinelWallet{
-    function execFromModule(address to, uint256 value, bytes calldata data) 
-    external returns(bytes memory);
-}
-contract DailyLimitModule {
+import "../../interfaces/ISentinelWallet.sol";
+import "../../interfaces/IModule.sol";
+import "../../utils/Errors.sol";
+contract DailyLimitModule is IModule {
     address public owner;
-    uint256 public deafultDailyLimit;
+    uint256 public defaultDailyLimit;
 
     mapping(address => mapping(uint256 => uint256)) public spent; // 某天已经支出的金额
     mapping(address => uint256) public walletLimit;
@@ -18,19 +17,42 @@ contract DailyLimitModule {
     event Exec(address indexed wallet, address indexed to, uint256 value, uint256 dayIndex);
 
     constructor(address _owner, uint256 _defaultDailyLimit){
-        require(_owner != address(0), "Owner cannot be 0");
-        require(_defaultDailyLimit > 0, "Default limit must greater than 0");
+        if (_owner == address(0)) {
+            revert Errors.OwnerCannotBeZero();
+        }
+        if (_defaultDailyLimit == 0) {
+            revert Errors.DefaultLimitMustBeGreaterThanZero();
+        }
         owner = _owner;
-        deafultDailyLimit = _defaultDailyLimit;
+        defaultDailyLimit = _defaultDailyLimit;
     }
 
-    modifier onlyOnwer(){
-        require(owner == msg.sender, "Not owner");
+    /// @inheritdoc IModule
+    function moduleType() external pure returns (ModuleType) {
+        return ModuleType.Executor;
+    }
+
+    /// @inheritdoc IModule
+    function moduleName() external pure returns (string memory) {
+        return "DailyLimitModule";
+    }
+
+    /// @inheritdoc IModule
+    function moduleVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+
+    modifier onlyOwner(){
+        if (owner != msg.sender) {
+            revert Errors.NotOwner();
+        }
         _;
     }
 
-    function setWalletLimit(address wallet, uint256 limit) external onlyOnwer {
-        require(limit > 0, "Limit must greater than 0");
+    function setWalletLimit(address wallet, uint256 limit) external onlyOwner {
+        if (limit == 0) {
+            revert Errors.LimitMustBeGreaterThanZero();
+        }
         walletLimit[wallet] = limit;
         emit SetWalletLimit(wallet, limit);
     }
@@ -42,7 +64,7 @@ contract DailyLimitModule {
     /// 查询钱包每日限额
     function dailyLimitFor(address wallet) public view returns (uint256) {
         uint256 l = walletLimit[wallet];
-        return l == 0 ? deafultDailyLimit : l;
+        return l == 0 ? defaultDailyLimit : l;
     }
 
     /// 模块执行: 计算转账金额有没有超过限额，执行操作，更新spent
@@ -50,7 +72,9 @@ contract DailyLimitModule {
         uint256 limit = dailyLimitFor(wallet);
         uint256 dayIndex = _dayIndex();
         uint256 dailySpent = spent[wallet][dayIndex];
-        require(dailySpent + value <= limit, "Exceeding the limit");
+        if (dailySpent + value > limit) {
+            revert Errors.ExceedingDailyLimit();
+        }
 
         spent[wallet][dayIndex] += value; // 先写状态，防止重放
         bytes memory res = ISentinelWallet(wallet).execFromModule(to, value, data);

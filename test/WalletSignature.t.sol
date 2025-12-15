@@ -4,6 +4,7 @@ pragma solidity ^0.8.21;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 import "../src/wallet/SentinelWallet.sol";
+import "../src/utils/Errors.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract WalletSignatureTest is Test{
@@ -24,7 +25,9 @@ contract WalletSignatureTest is Test{
         address _to, uint256 _value, bytes memory _data, uint256 _nonce
     ) internal view returns (bytes32){
         bytes32 h = keccak256(abi.encodePacked(address(wallet), _to, _value, keccak256(_data), _nonce, block.chainid));
-        return h;
+        // 计算以太坊签名消息格式
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", h));
+        return ethSignedHash;
     }
 
     /// 准备操作数据 → 生成唯一签名哈希 → 模拟所有者签名 → 模拟第三方提交签名执行 → 验证操作结果和 nonce 递增
@@ -69,7 +72,7 @@ contract WalletSignatureTest is Test{
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.prank(address(0xDEAD));
-        vm.expectRevert("Invalid signature");
+        vm.expectRevert(Errors.InvalidSignature.selector);
         wallet.executeWithSignature(target, 0, data, signature);
 
         assertEq(wallet.nonce(), currentNonce);
@@ -96,7 +99,7 @@ contract WalletSignatureTest is Test{
 
         /// 模拟同签名第二次调用
         vm.prank(address(0xAAA));
-        vm.expectRevert("Invalid signature");
+        vm.expectRevert(Errors.InvalidSignature.selector);
         wallet.executeWithSignature(target,0,data,signature);
 
         assertEq(TargetContract(target).x(), 123);
@@ -123,7 +126,7 @@ contract WalletSignatureTest is Test{
         assertEq(TargetContract(target).x(), 999);
 
         vm.prank(address(0xAAAB));
-        vm.expectRevert("Invalid signature");
+        vm.expectRevert(Errors.InvalidSignature.selector);
         wallet2.executeWithSignature(target, 0, data, signature);
     }
 

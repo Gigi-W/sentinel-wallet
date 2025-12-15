@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 import "../wallet/SentinelWallet.sol";
+import "../utils/Errors.sol";
 
 contract WalletFactory{
     event WalletCreated(address indexed wallet, address indexed owner, bytes32 salt);
@@ -25,12 +26,15 @@ contract WalletFactory{
     }
 
     function deploy(address owner, bytes32 salt) external returns (address wallet){
-        // bytes memory bytecode = abi.encodePacked(
-        //     type(SentinelWallet).creationCode,
-        //     abi.encode(owner)
-        // );
+        if (owner == address(0)) {
+            revert Errors.OwnerCannotBeZero();
+        }
 
         wallet = address(new SentinelWallet{salt: salt}(owner));
+
+        if (wallet == address(0)) {
+            revert Errors.DeploymentFailed();
+        }
 
         emit WalletCreated(wallet, owner, salt);
     }

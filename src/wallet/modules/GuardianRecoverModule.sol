@@ -4,11 +4,11 @@
 // SPDX-License-Identifier:MIT
 pragma solidity ^0.8.21;
 
-interface ISentinelWallet{
-    function changeOwnerByModule(address newOwner) external;
-}
+import "../../interfaces/ISentinelWallet.sol";
+import "../../interfaces/IModule.sol";
+import "../../utils/Errors.sol";
 
-contract GuardianRecoverModule {
+contract GuardianRecoverModule is IModule {
     address owner;
     uint256 delay;
 
@@ -29,23 +29,46 @@ contract GuardianRecoverModule {
         delay = _delay;
     }
 
+    /// @inheritdoc IModule
+    function moduleType() external pure returns (ModuleType) {
+        return ModuleType.Recovery;
+    }
+
+    /// @inheritdoc IModule
+    function moduleName() external pure returns (string memory) {
+        return "GuardianRecoverModule";
+    }
+
+    /// @inheritdoc IModule
+    function moduleVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+
     modifier onlyOwner(){
-        require(owner==msg.sender, "Not owner");
+        if (owner != msg.sender) {
+            revert Errors.NotOwner();
+        }
         _;
     }
 
     // 设置守护者，onlyOwner
     function setGuardian(address wallet, address guardian) external onlyOwner {
-        require(guardian!=address(0), "Guardian cannot be 0");
+        if (guardian == address(0)) {
+            revert Errors.GuardianCannotBeZero();
+        }
         guardianOf[wallet] = guardian;
         emit GuardianSet(wallet, guardian);
     }
 
     // guardian发起提议
     function proposeRecovery(address wallet, address proposed) external {
-        require(proposed != address(0), "Proposed cannot be 0");
+        if (proposed == address(0)) {
+            revert Errors.ProposedCannotBeZero();
+        }
         address guardian = guardianOf[wallet];
-        require(guardian == msg.sender, "Not guardian");
+        if (guardian != msg.sender) {
+            revert Errors.NotGuardian();
+        }
 
         proposals[wallet] = Proposal({
             proposed: proposed,
@@ -60,7 +83,9 @@ contract GuardianRecoverModule {
         Proposal memory proposal = proposals[wallet];
         address proposed = proposal.proposed;
 
-        require(block.timestamp >= proposal.at + delay, "Delay not passed");
+        if (block.timestamp < proposal.at + delay) {
+            revert Errors.DelayNotPassed();
+        }
 
         delete proposals[wallet];
         ISentinelWallet(wallet).changeOwnerByModule(proposed);
