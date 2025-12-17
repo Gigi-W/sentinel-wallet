@@ -3,22 +3,18 @@ pragma solidity ^0.8.21;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "../utils/Errors.sol";
+import "./modules/ModuleManager.sol";
 
 contract SentinelWallet {
     using ECDSA for bytes32;
+    using ModuleManager for ModuleManager.ModuleStorage;
+
+    // 模块存储槽位置（使用 keccak256 确保唯一性）
+    bytes32 private constant MODULE_STORAGE_POSITION = keccak256("sentinel.wallet.modules");
 
     address public owner;
     uint256 public nonce;
-    
-    // 标记模块是否启用
-    mapping(address => bool) private modulesEnabled;
-    // 存储所有已启用模块的模块地址
-    address[] private modulesList;
-    // 记录「模块地址」在modulesList中的「索引+1」，为了和索引0（不存在）做区分
-    mapping(address => uint256) public modulesIndexPlusOne;
 
-    event ModuleEnabled(address indexed module);
-    event ModuleDisabled(address indexed module);
     event ExecFromModule(address module, address to, uint256 value, bytes data);
     event Executed(address indexed to, uint256 value, bytes data, address indexed signer);
     event OwnerChanged(address indexed oldOwner, address indexed newOwner);
@@ -37,9 +33,17 @@ contract SentinelWallet {
         _;
     }
 
+    /**
+     * @notice 获取模块存储
+     * @return 模块存储结构
+     */
+    function _moduleStorage() private pure returns (ModuleManager.ModuleStorage storage) {
+        return ModuleManager.moduleStorage(MODULE_STORAGE_POSITION);
+    }
+
     /// 限制仅模块可调用
     modifier onlyModule(){
-        if (!modulesEnabled[msg.sender]) {
+        if (!_moduleStorage().isModuleEnabled(msg.sender)) {
             revert Errors.NotEnabledModule();
         }
         _;
@@ -47,52 +51,27 @@ contract SentinelWallet {
 
     /// 模块是否启用
     function isModuleEnabled(address module) external view returns (bool) {
-        return modulesEnabled[module];
+        return _moduleStorage().isModuleEnabled(module);
     } 
 
     /// 返回模块列表
     function getModules() external view returns(address[] memory) {
-        return modulesList;
+        return _moduleStorage().getModules();
+    }
+
+    /// 获取模块索引（公开接口，保持向后兼容）
+    function modulesIndexPlusOne(address module) external view returns (uint256) {
+        return _moduleStorage().getModuleIndex(module);
     }
 
     /// 启用模块
-    function enableModule(address module) external onlyOwner{
-        if (module == address(0)) {
-            revert Errors.ModuleCannotBeZero();
-        }
-        if(modulesEnabled[module]){
-            return;
-        }
-        modulesEnabled[module] = true;
-        modulesList.push(module);
-        modulesIndexPlusOne[module] = modulesList.length;
-        emit ModuleEnabled(module);
+    function enableModule(address module) external onlyOwner {
+        _moduleStorage().enableModule(module);
     }
 
     /// 禁用模块
-    function disableModule(address module) external onlyOwner{
-        if (module == address(0)) {
-            revert Errors.ModuleCannotBeZero();
-        }
-        if(!modulesEnabled[module]){
-            return;
-        }
-        modulesEnabled[module]=false;
-        // 从模块列表中删除
-        uint256 idxPlusOne = modulesIndexPlusOne[module];
-        if(idxPlusOne!=0){
-            uint256 idx = idxPlusOne - 1;
-            uint256 lastIdx = modulesList.length - 1;
-            if(idx!=lastIdx){
-                address last = modulesList[lastIdx];
-                modulesList[idx] = last;
-                modulesIndexPlusOne[last] = idx + 1;
-            }
-            modulesList.pop();
-            // 标记不在列表中
-            modulesIndexPlusOne[module] = 0;
-            emit ModuleDisabled(module);
-        }
+    function disableModule(address module) external onlyOwner {
+        _moduleStorage().disableModule(module);
     }
 
     /// 1、所有者调用executed → 校验权限 → 递增 nonce → 调用目标地址

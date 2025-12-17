@@ -8,6 +8,9 @@ import "../src/utils/Errors.sol";
 /**
  * ModuleManager.t.sol
  * 对 SentinelWallet 的模块管理逻辑进行单元测试
+ * 
+ * 注意：模块管理逻辑已抽离到 ModuleManager 库中，但外部接口通过 SentinelWallet 暴露
+ * 本测试文件测试 SentinelWallet 的模块管理接口，这些接口内部使用 ModuleManager 库
  *
  * 覆盖：
  * - enableModule 幂等性（重复 enable 不失败）
